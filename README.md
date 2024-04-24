@@ -31,11 +31,9 @@ Attention, so that the project adapts to your problem, change the values ​​o
 async def main():
     pages = 0 # here
     company = "company" # here
-    query = "&status=EVALUATED" #here
+    filter = "&status=EVALUATED" #here
     url = f"/empresa/{company}/lista-reclamacoes"
-    for i in range(id):
-	if i == 0: # here
-	    break
+	# all
 ```
 
 

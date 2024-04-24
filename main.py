@@ -2,34 +2,32 @@ import asyncio
 import json
 import logging
 import re
-import time
 
 import httpx
 from bs4 import BeautifulSoup
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.propagate = True
 
-logger.propagate = False
-
-headers = {
-    "User-Agent": r"Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0"
-}
 url_base = "https://www.reclameaqui.com.br"
-text_error_500 = r'<p class="sc-1p4i0ux-2 dteYVH">Estamos trabalhando para resolver o problema. Por favor, tente entrar de novo daqui a pouco.</p>"'
 
 
-async def request(url: str = "") -> str:
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            url=f"{url_base}{url}",
-            headers=headers,
-        )
+async def request(client: httpx.AsyncClient, url: str = "") -> httpx.Response:
+    headers = {
+        "User-Agent": r"Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0"
+    }
 
-        if text_error_500 in response.text:
-            return None
-        else:
-            return response
+    text_error_500 = r'<p class="sc-1p4i0ux-2 dteYVH">Estamos trabalhando para resolver o problema. Por favor, tente entrar de novo daqui a pouco.</p>"'
+
+    url = url_base + url
+    timeout = httpx.Timeout(15.0, connect=60.0)
+    response = await client.get(url=url, headers=headers, timeout=timeout)
+
+    if text_error_500 in response.text:
+        return None
+    else:
+        return response
 
 
 def chat_response(complaint_interaction_list: list) -> list:
@@ -59,12 +57,8 @@ def chat_response(complaint_interaction_list: list) -> list:
         "div", {"data-testid": "complaint-evaluation-interaction"}
     )
     if complaint_evaluation:
-        message = (
-            complaint_evaluation.find(
-                "div", {"data-testid": "complaint-interaction"}
-            )
-            .find("p")
-            .text
+        message = complaint_evaluation.find(
+            "div", {"data-testid": "complaint-interaction"}
         )
 
         date = complaint_evaluation.find("span").text
@@ -82,7 +76,7 @@ def chat_response(complaint_interaction_list: list) -> list:
 
     final_consideration.append(
         {
-            "message": message,
+            "message": message.find("p").text,
             "service_note": service_note,
             "make_business": make_business,
             "data": date,
@@ -92,54 +86,49 @@ def chat_response(complaint_interaction_list: list) -> list:
     return chat, final_consideration
 
 
-async def beautiful_soup(html: str):
+async def beautiful_soup(client: httpx.AsyncClient, html: str):
     chat = []
     final_consideration = []
+
     with open("list_claims_links.json", "r", encoding="utf8") as json_file:
         summary = json.load(json_file)
+
     try:
-        soup = BeautifulSoup(html, "lxml")
-        for container in soup.find_all("div", {"class": "sc-1pe7b5t-0"}):
-            title = container.find("h4", {"class": "sc-1pe7b5t-1 bVKmkO"})
-            status = container.find("span")
+        soup = BeautifulSoup(html.text, "lxml")
+        container = soup.find("div", {"class": "sc-1pe7b5t-0"})
+        title = container.find("h4", {"class": "sc-1pe7b5t-1 bVKmkO"})
+        status = container.find("span")
 
-            link = container.find("a").get("href")
-            response = await request(link)
-            if not response:
-                logger.error(f"Erro 500 -> {link}")
-                continue
-            elif response.status_code != 200:
-                logger.error(f"Status: {response.status_code} -> {link}")
-                continue
+        link = container.find("a").get("href")
 
-            cotaniner_container_chat = BeautifulSoup(response.text, "lxml")
+        response = await request(client, link)
+        cotaniner_container_chat = BeautifulSoup(response.text, "lxml")
 
-            cotaniner_claim = cotaniner_container_chat.find(
-                "div", {"data-testid": "complaint-content-container"}
-            )
-            description = cotaniner_claim.find(
-                "p", {"data-testid": "complaint-description"}
-            ).text
+        cotaniner_claim = cotaniner_container_chat.find(
+            "div", {"data-testid": "complaint-content-container"}
+        )
+        description = cotaniner_claim.find(
+            "p", {"data-testid": "complaint-description"}
+        ).text
 
-            date = cotaniner_claim.find(
-                "span", {"data-testid": "complaint-creation-date"}
-            ).text
-            chat, final_consideration = chat_response(cotaniner_container_chat)
-            summary.append(
-                {
-                    "title": title.text.lower(),
-                    "description": description,
-                    "status": status.text.lower(),
-                    "date": date,
-                    "href": f"{url_base}{link}",
-                    "chat": chat,
-                    "final_consideration": final_consideration,
-                }
-            )
-            with open(
-                "list_claims_links.json", "w", encoding="utf8"
-            ) as json_file:
-                json.dump(summary, json_file, indent=4, ensure_ascii=False)
+        date = cotaniner_claim.find(
+            "span", {"data-testid": "complaint-creation-date"}
+        ).text
+        chat, final_consideration = chat_response(cotaniner_container_chat)
+
+        summary.append(
+            {
+                "title": title.text.lower(),
+                "description": description,
+                "status": status.text.lower(),
+                "date": date,
+                "href": f"{url_base}{link}",
+                "chat": chat,
+                "final_consideration": final_consideration,
+            }
+        )
+        with open("list_claims_links.json", "w", encoding="utf8") as json_file:
+            json.dump(summary, json_file, indent=4, ensure_ascii=False)
 
     except Exception as error:
         logger.error(error)
@@ -147,26 +136,34 @@ async def beautiful_soup(html: str):
             json.dump(summary, json_file, indent=4, ensure_ascii=False)
 
 
-async def main():
-    id = 13991
-    url_itau = "/empresa/itau/lista-reclamacoes"
-    for i in range(id):
-        if i == 13991:
+async def main(client: httpx.AsyncClient):
+    pages = 13991
+    company = "itau"
+    filter = "&status=EVALUATED"
+    url = f"/empresa/{company}/lista-reclamacoes"
+
+    for i in range(pages):
+        if i == 0:
+            continue
+        if i == pages:
             break
-        response = await request(
-            url=f"{url_itau}/?pagina={i}&status=EVALUATED"
-        )
+        response = await request(client, url=f"{url}/?pagina={i}{filter}")
         if not response:
             logger.error(f"Erro 500 -> Request id: {i}")
             continue
         if response.status_code == 200:
-            await beautiful_soup(response.text)
+            await beautiful_soup(client, response)
         else:
             logger.error(f"Status: {response.status_code} -> Request id: {i}")
 
 
+async def client():
+    async with httpx.AsyncClient() as client:
+        await main(client)
+
+
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(client())
     except Exception as error:
         logger.error(error)
