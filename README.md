@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img alt="logo" src="https://www.python.org/static/community_logos/python-logo-generic.svg" style="width: 600px; height: 900;">
+  <img alt="logo" src="https://www.python.org/static/community_logos/python-logo-generic.svg" style="width: 700px; height: 950;">
 </h1>
 
 
@@ -10,32 +10,32 @@ Reclame Aqui is a platform widely used by Brazilian consumers to register their 
 ## Features
  - 📊 Data Extraction: The project uses web scraping techniques to extract relevant data from complaints registered on Reclame Aqui.
  - 📈 Data Analysis: In addition to extraction, the project can also include functionalities to analyze the extracted data.
-
+ - 📝 Convert json to xlsx file for analysis.
 
 
 
 ## Install
+ - ☠️ Requires `Python` 3.8 or later to run.
 ```bash
 pip install -r requirements.txt
-
 ```
-## 🚀 Run
 
+## 🚀 Run
 ```bash
 ptyhon main.py
 ```
 
 ## ☠️ Attention
-Attention, so that the project adapts to your problem, change the values ​​of the variables according to your objective, the variables in question are in the `main() function`
+Attention, so that the project adapts to your problem, change the values ​​of the variables according to your objective, the variables in question are in the `main() function`.
+
 ```python
 async def main():
-    pages = 0 # here
-    company = "company" # here
-    filter = "&status=EVALUATED" #here
+    global file_json
+    file_json = "claims_list" # here
+    company = "itau" # here
+    filter = "&status=EVALUATED" # here
     url = f"/empresa/{company}/lista-reclamacoes"
-	# all
 ```
-
 
 ### Json with the extracted information
 ```json
