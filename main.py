@@ -8,9 +8,6 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-logger = logging.getLogger("requests")
-logging.basicConfig(level=logging.DEBUG)
-
 
 def request(client: requests.Session, url: str = "") -> requests.Response:
     headers = {
@@ -28,31 +25,46 @@ def request(client: requests.Session, url: str = "") -> requests.Response:
         return response
 
 
-def json_to_excel(file_json: str, file_xlsx: str) -> None:
+def get_total_page(client: requests.Session, url: str) -> int | None:
+    response = request(client, url)
+
+    soup = BeautifulSoup(response.text, "lxml")
+    page_total = soup.find("span", {"data-testid": "pages-label"})
+
+    if not page_total:
+        logger.fatal(
+            "Não foi encontrado o total de paginas, procure manualmente."
+        )
+        return None
+    total_page = int(page_total.text.split()[-1])
+    return total_page
+
+
+def check_and_update_json(name_file: str) -> str:
     current_date = datetime.now().date()
-    file_xlsx = f"{ROOT_DIR}/{file_xlsx}_{current_date}.xlsx"
+    file_json = f"{ROOT_DIR}/{name_file}_{current_date}.json"
 
-    with open(file_json, "r", encoding="utf-8") as file:
-        file_json = json.load(file)
+    if os.path.exists(file_json):
+        modification_date = datetime.fromtimestamp(
+            os.path.getmtime(file_json)
+        ).date()
+        if modification_date == current_date:
+            with open(file_json, "w") as json_file:
+                json_file.write("[]")
+            logger.info(
+                f"O arquivo JSON {file_json} foi atualizado com uma matriz vazia."
+            )
+        else:
+            new_json_file = f"{ROOT_DIR}/claims_list_{current_date}.json"
+            with open(new_json_file, "w") as json_file:
+                json_file.write("[]")
+            logger.info(f"Um novo arquivo JSON {new_json_file} foi criado.")
+    else:
+        with open(file_json, "w") as json_file:
+            json_file.write("[]")
+        logger.info(f"Um novo arquivo JSON {file_json} foi criado.")
 
-    colunas = {
-        "title": "Titulo",
-        "description": "Descrição",
-        "status": "Status",
-        "date": "Data",
-        "link": "Link",
-        "chat": "Chat",
-        "final_consideration.message": "Mensagem",
-        "final_consideration.service_note": "Nota do serviço",
-        "final_consideration.make_business": "Faria negocios futuros",
-        "final_consideration.date": "Data",
-    }
-
-    df = pd.json_normalize(file_json).rename(columns=colunas)[
-        [item[1] for item in colunas.items()]
-    ]
-
-    df.to_excel(file_xlsx, index=False)
+    return file_json
 
 
 def chat_response(complaint_interaction_list: BeautifulSoup) -> list[dict]:
@@ -120,8 +132,10 @@ def chat_response(complaint_interaction_list: BeautifulSoup) -> list[dict]:
 def beautiful_soup(client: requests.Session, response) -> None:
     chat = []
     final_consideration = []
-    summary = []
-
+    summary = {}
+    with open(file_json, 'r', encoding="utf-8") as file:
+        dados = json.load(file)
+        
     try:
         soup = BeautifulSoup(response.text, "lxml")
         lista_claims = soup.find("div", {"class": "sc-1sm4sxr-0 iwOeoe"})
@@ -142,75 +156,31 @@ def beautiful_soup(client: requests.Session, response) -> None:
             )
             description = cotaniner_claim.find(
                 "p", {"data-testid": "complaint-description"}
-            ).text
+            )
 
             date = cotaniner_claim.find(
                 "span", {"data-testid": "complaint-creation-date"}
-            ).text
+            )
             chat, final_consideration = chat_response(cotaniner_container_chat)
 
-            summary.append(
-                {
+            summary = {
                     "title": title.text.lower(),
-                    "description": description,
+                    "description": description.text,
                     "status": status.text.lower(),
-                    "date": date,
+                    "date": date.text,
                     "link": f"{url_base}{link}",
                     "chat": chat,
                     "final_consideration": final_consideration,
                 }
-            )
-        with open(file_json, "w", encoding="utf8") as json_file:
-            json.dump(summary, json_file, indent=4, ensure_ascii=False)
-
-        json_to_excel(file_json, file_xlsx)
+            
+            dados.append(summary)
+            
+            with open(file_json, "w", encoding="utf8") as file:
+                json.dump(dados, file, indent=4, ensure_ascii=False)
+                logger.info(f"Save claims. {summary['title'][:30]}")
+                
     except Exception as error:
-        with open(file_json, "w", encoding="utf8") as json_file:
-            json.dump(summary, json_file, indent=4, ensure_ascii=False)
-        json_to_excel(file_json, file_xlsx)
         logger.error(f"detail: def beautiful_soup -> {error}")
-
-
-def get_total_page(client: requests.Session, url: str) -> int | None:
-    response = request(client, url)
-
-    soup = BeautifulSoup(response.text, "lxml")
-    page_total = soup.find("span", {"data-testid": "pages-label"})
-
-    if not page_total:
-        logger.fatal(
-            "Não foi encontrado o total de paginas, procure manualmente."
-        )
-        return None
-    total_page = int(page_total.text.split()[-1])
-    return total_page
-
-
-def check_and_update_json(name_file: str) -> str:
-    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-    current_date = datetime.now().date()
-    file_json = f"{ROOT_DIR}/{name_file}_{current_date}.json"
-
-    if os.path.exists(file_json):
-        modification_date = datetime.fromtimestamp(
-            os.path.getmtime(file_json)
-        ).date()
-        if modification_date == current_date:
-            with open(file_json, "w") as json_file:
-                json_file.write("[]")
-            logger.info(
-                f"O arquivo JSON {file_json} foi atualizado com uma matriz vazia."
-            )
-        else:
-            new_json_file = f"{ROOT_DIR}/claims_list_{current_date}.json"
-            with open(new_json_file, "w") as json_file:
-                json_file.write("[]")
-            logger.info(f"Um novo arquivo JSON {new_json_file} foi criado.")
-    else:
-        with open(file_json, "w") as json_file:
-            json_file.write("[]")
-        logger.info(f"Um novo arquivo JSON {file_json} foi criado.")
-    return file_json
 
 
 def main(client: requests.Session) -> None:
@@ -218,10 +188,35 @@ def main(client: requests.Session) -> None:
     # ☠️ Change the indicated values no `README.md`
     """
 
+    for i in range(init_page, total_page, 1):
+        try:
+            response = request(client, url=f"{url}/?pagina={i}{_filter}")
+            if not response:
+                logger.error(f"Erro 500 -> Request id: {i}")
+                continue
+            if response.status_code == 200:
+                beautiful_soup(client, response)
+
+            else:
+                logger.error(
+                    f"Status: {response.status_code} -> Request id: {i}"
+                )
+        except Exception as error:
+            logger.error(f"Request: {error}")
+
+
+if __name__ == "__main__":
+    logger = logging.getLogger("requests")
+    logging.basicConfig(level=logging.DEBUG)
+
     global file_json
     global url_base
     global ROOT_DIR
     global file_xlsx
+    global _filter
+    global url
+    global company
+    global init_page
 
     ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
     url_base = "https://www.reclameaqui.com.br"
@@ -233,30 +228,8 @@ def main(client: requests.Session) -> None:
     file_xlsx = "claims_list"
     init_page = 1
     file_json = check_and_update_json(file_json)
-    total_page = get_total_page(client, f"{url}/?{_filter}")
-
-    logger.info(f"Total de paginas: {total_page}")
-
-    def start_page(stop, start=0, step=1) -> list:
-        return range(start, stop, step)
-
-    for i in start_page(stop=total_page, start=init_page, step=1):
-        try:
-            response = request(client, url=f"{url}/?pagina={i}{_filter}")
-            if not response:
-                logger.error(f"Erro 500 -> Request id: {i}.")
-                continue
-            if response.status_code == 200:
-                beautiful_soup(client, response)
-            else:
-                logger.error(
-                    f"Status: {response.status_code} -> Request id: {i}."
-                )
-        except Exception as error:
-            logger.error(f"Request: {error}")
-
-
-if __name__ == "__main__":
 
     with requests.Session() as client:
+        total_page = get_total_page(client, f"{url}/?{_filter}")
+        logger.info(f"Total de paginas: {total_page}")
         main(client)
