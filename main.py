@@ -12,7 +12,7 @@ from get_urls_pages import main_get_urls
 from to_excel import json_to_excel
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger.propagate = True
 
 session = requests.Session()
@@ -33,26 +33,20 @@ headers = {
 }
 
 
-def request(url: str = "") -> requests.Response:
-    text_error_500 = r'<p class="sc-1p4i0ux-2 dteYVH">Estamos trabalhando para resolver o problema. Por favor, tente entrar de novo daqui a pouco.</p>"'
-    text_error_page = r"Ops! Não conseguimos ir até a página"
-
-    response = session.get(url=url, headers=headers, timeout=10)
-    if text_error_500 in response.text or text_error_page in response.text:
-        return None
-    else:
-        return response
+def request(url: str) -> requests.Response:
+    return session.get(url=url, headers=headers, timeout=10)
 
 
 def clean_claims(claims: list[dict]) -> list[dict]:
     unique_keys = set()
     unique_dicts = []
 
-    for dictionary in claims:
-        key = dictionary["title"]
+    for claim in claims:
+        key = claim["title"]
+
         if key not in unique_keys:
             unique_keys.add(key)
-            unique_dicts.append(dictionary)
+            unique_dicts.append(claim)
 
     logger.info(
         f"De {len(claims)} foram encontrada {len(unique_dicts)} reclamações unicas."
@@ -206,20 +200,20 @@ def main() -> None:
 
     url_base: str = "https://www.reclameaqui.com.br"
     file_json: str = "claims_list"
-    file_ulrs_claims = "links_claims"
+    file_ulrs_claims: str = "links_claims"
     company: str = "itau"
     filter: str = "&status=EVALUATED"
     url: str = f"/empresa/{company}/lista-reclamacoes"
-    urls_file_json = True
-    init_page = 1
-
-    file_json: str = check_and_update_json(file_json)
-
+    urls_file_json: bool = True
+    init_page: int = 1
+    error_trial_limit: int = 30
+    file_xlsx: str = "claims_list"
     url_claims: str = f"{url_base}{url}/?pagina=1{filter}"
-
+    claims = []
     total_pages = get_total_page(url_claims)
     logger.info(f"Total de paginas: {total_pages}")
-
+    
+    file_json: str = check_and_update_json(file_json)
     if not urls_file_json:
         file_ulrs_claims: str = check_and_update_json(file_ulrs_claims)
         urls = main_get_urls(
@@ -227,19 +221,19 @@ def main() -> None:
             file_ulrs_claims=file_ulrs_claims,
             total_pages=total_pages,
             init_page=init_page,
+            error_trial_limit=error_trial_limit,
         )
     else:
         with open("urls.json", "r", encoding="utf-8") as file:
             urls: list[str] = json.load(file)
 
-    claims = []
     try:
         for url in urls:
             logger.info(url)
             response = request(url)
             claim_dict = get_dados(response, url)
             claims.append(claim_dict)
-            
+
     except Exception as error:
         logger.fatal(error)
 
@@ -250,7 +244,8 @@ def main() -> None:
     with open(file_json, "w", encoding="utf-8") as file:
         json.dump(claims, file, ensure_ascii=False, indent=4)
 
-    json_to_excel(file_json)
+    json_to_excel(claims, file_xlsx)
+
 
 if __name__ == "__main__":
     main()

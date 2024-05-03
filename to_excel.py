@@ -1,13 +1,15 @@
-import json
 import logging
+import os
+from datetime import datetime
 
 import pandas as pd
 
 
-def json_to_excel(file_json: str) -> None:
+def json_to_excel(claims: list[dict], file_name: str = "claims_list") -> None:
+    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+    current_date = datetime.now().date()
 
-    with open(file_json, "r", encoding="utf-8") as file:
-        file = json.load(file)
+    file_xlsx = f"{ROOT_DIR}/{file_name}_{current_date}.xlsx"
 
     colunas = {
         "title": "Titulo",
@@ -21,9 +23,8 @@ def json_to_excel(file_json: str) -> None:
         "final_consideration.date": "Data da consideração final",
         "link": "Link",
     }
-    
-    file_xlsx = file_json.replace(".json", ".xlsx")
-    df = pd.json_normalize(file).rename(columns=colunas)
 
+    df = pd.json_normalize(claims).rename(columns=colunas, index=False)
     df.to_excel(file_xlsx, index=False)
+
     logging.info(f"Save: {file_xlsx}")
