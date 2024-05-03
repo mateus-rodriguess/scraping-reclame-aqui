@@ -15,6 +15,7 @@ Reclame Aqui is a platform widely used by Brazilian consumers to register their 
 - 📈 Data Analysis: In addition to extraction, the project can also include functionalities to analyze the extracted data.
 - 📝 Convert json to xlsx file for analysis.
 <hr>
+
 ## Install
 
 - ☠️ Requires `Python` 3.12 or later to run.
