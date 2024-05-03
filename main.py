@@ -3,44 +3,80 @@ import logging
 import os
 import re
 from datetime import datetime
+from typing import Tuple
 
-import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
+from get_urls_pages import main_get_urls
+from to_excel import json_to_excel
 
-def request(client: requests.Session, url: str = "") -> requests.Response:
-    headers = {
-        "User-Agent": r"Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
-    }
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
+logger.propagate = True
 
-    url = url_base + url
+session = requests.Session()
+
+headers = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Language": "pt-BR,pt;q=0.5",
+    "Connection": "keep-alive",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "name": "Sec-Fetch-Mode",
+    "Sec-Fetch-Site": "none",
+    "valSec-Fetch-Userue": "?1",
+    "Upgrade-Insecure-Request": "1",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Host": "www.reclameaqui.com.br",
+}
+
+
+def request(url: str = "") -> requests.Response:
     text_error_500 = r'<p class="sc-1p4i0ux-2 dteYVH">Estamos trabalhando para resolver o problema. Por favor, tente entrar de novo daqui a pouco.</p>"'
     text_error_page = r"Ops! Não conseguimos ir até a página"
 
-    response = client.get(url=url, headers=headers, timeout=20)
+    response = session.get(url=url, headers=headers, timeout=10)
     if text_error_500 in response.text or text_error_page in response.text:
         return None
     else:
         return response
 
 
-def get_total_page(client: requests.Session, url: str) -> int | None:
-    response = request(client, url)
+def clean_claims(claims: list[dict]) -> list[dict]:
+    unique_keys = set()
+    unique_dicts = []
 
-    soup = BeautifulSoup(response.text, "lxml")
-    page_total = soup.find("span", {"data-testid": "pages-label"})
+    for dictionary in claims:
+        key = dictionary["title"]
+        if key not in unique_keys:
+            unique_keys.add(key)
+            unique_dicts.append(dictionary)
+
+    logger.info(
+        f"De {len(claims)} foram encontrada {len(unique_dicts)} reclamações unicas."
+    )
+    return unique_dicts
+
+
+def get_total_page(url: str) -> int | None:
+    response = request(url)
+
+    page_html = BeautifulSoup(response.text, "html.parser")
+    page_total = page_html.find("span", {"data-testid": "pages-label"})
 
     if not page_total:
         logger.fatal(
             "Não foi encontrado o total de paginas, procure manualmente."
         )
         return None
-    total_page = int(page_total.text.split()[-1])
-    return total_page
+
+    return int(page_total.text.split()[-1])
 
 
 def check_and_update_json(name_file: str) -> str:
+    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
     current_date = datetime.now().date()
     file_json = f"{ROOT_DIR}/{name_file}_{current_date}.json"
 
@@ -67,52 +103,44 @@ def check_and_update_json(name_file: str) -> str:
     return file_json
 
 
-def chat_response(complaint_interaction_list: BeautifulSoup) -> list[dict]:
+def chat_response(containers: BeautifulSoup) -> Tuple[list[dict], dict]:
     chat = []
     final_consideration = {}
-    message_owner = None
-    message = None
-    make_business = None
-    service_note = None
 
-    for complaint_interaction in complaint_interaction_list.find_all(
+    for container in containers.find_all(
         "div", {"data-testid": "complaint-interaction"}
     ):
-        owner = complaint_interaction.find("h2").text
-        date = complaint_interaction.find(
-            "span", {"class": "sc-1o3atjt-3 bHNkuv"}
-        ).text
 
-        if not complaint_interaction.find("h2", {"type": "FINAL_ANSWER"}):
-            message_owner = complaint_interaction.find(
-                "p", {"class": "sc-1o3atjt-4"}
-            )
+        owner = container.find("h2").text
+        date = container.find("span", {"class": "sc-1o3atjt-3 bHNkuv"}).text
+
+        if not container.find("h2", {"type": "FINAL_ANSWER"}):
+            message_owner = container.find("p", {"class": "sc-1o3atjt-4"}).text
             chat.append(
                 {
                     "owner": owner,
                     "date": date,
-                    "chat": message_owner.text,
+                    "chat": message_owner,
                 }
             )
 
-    complaint_evaluation = complaint_interaction_list.find(
+    complaint = containers.find(
         "div", {"data-testid": "complaint-evaluation-interaction"}
     )
-    if complaint_evaluation:
-        message = complaint_evaluation.find(
+
+    if complaint:
+        message = complaint.find(
             "div", {"data-testid": "complaint-interaction"}
         )
 
-        date = complaint_evaluation.find("span").text
+        date = complaint.find("span").text
 
-        make_business = complaint_evaluation.find(
+        make_business = complaint.find(
             "div", {"data-testid": "complaint-deal-again"}
         )
-        service_note = complaint_evaluation.find_all(
-            "div", {"class": "sc-uh4o7z-0"}
-        )
+        service_note = complaint.find_all("div", {"class": "sc-uh4o7z-0"})
         regex = re.compile(r"\d+")
-        service_note = complaint_evaluation.find_all(string=regex)[-1]
+        service_note = complaint.find_all(string=regex)[-1]
 
         if make_business:
             make_business = make_business.text
@@ -129,107 +157,100 @@ def chat_response(complaint_interaction_list: BeautifulSoup) -> list[dict]:
     return chat, final_consideration
 
 
-def beautiful_soup(client: requests.Session, response) -> None:
-    chat = []
-    final_consideration = []
-    summary = {}
-    with open(file_json, 'r', encoding="utf-8") as file:
-        dados = json.load(file)
-        
-    try:
-        soup = BeautifulSoup(response.text, "lxml")
-        lista_claims = soup.find("div", {"class": "sc-1sm4sxr-0 iwOeoe"})
-        lista_claims = lista_claims.find_all(
-            "div", {"class": "sc-1pe7b5t-0 eJgBOc"}
-        )
+def get_dados(containers: requests.Response, url: str) -> list:
+    claims = {}
+    containers = BeautifulSoup(containers.text, "html.parser")
 
-        for container in lista_claims:
-            link = container.find("a").get("href")
-            title = container.find("h4", {"class": "sc-1pe7b5t-1 bVKmkO"})
-            status = container.find("span")
+    detail = containers.find(
+        "div", {"data-testid": "complaint-content-container"}
+    )
+    status = (
+        detail.find("div", {"data-testid": "complaint-status"})
+        .find("span")
+        .text
+    )
+    title = detail.find("h1", {"data-testid": "complaint-title"}).text
+    date = detail.find("span", {"data-testid": "complaint-creation-date"}).text
 
-            response = request(client, link)
-            cotaniner_container_chat = BeautifulSoup(response.text, "lxml")
+    cotaniner_claim = containers.find(
+        "div", {"data-testid": "complaint-content-container"}
+    )
+    description = cotaniner_claim.find(
+        "p", {"data-testid": "complaint-description"}
+    ).text
 
-            cotaniner_claim = cotaniner_container_chat.find(
-                "div", {"data-testid": "complaint-content-container"}
-            )
-            description = cotaniner_claim.find(
-                "p", {"data-testid": "complaint-description"}
-            )
+    chat, final_consideration = chat_response(
+        containers.find("div", {"data-testid": "complaint-interaction-list"})
+    )
 
-            date = cotaniner_claim.find(
-                "span", {"data-testid": "complaint-creation-date"}
-            )
-            chat, final_consideration = chat_response(cotaniner_container_chat)
+    claims = {
+        "title": title,
+        "description": description,
+        "status": status,
+        "chat": chat,
+        "date": date,
+        "link": url,
+        "final_consideration": final_consideration,
+    }
 
-            summary = {
-                    "title": title.text.lower(),
-                    "description": description.text,
-                    "status": status.text.lower(),
-                    "date": date.text,
-                    "link": f"{url_base}{link}",
-                    "chat": chat,
-                    "final_consideration": final_consideration,
-                }
-            
-            dados.append(summary)
-            
-            with open(file_json, "w", encoding="utf8") as file:
-                json.dump(dados, file, indent=4, ensure_ascii=False)
-                logger.info(f"Save claims. {summary['title'][:30]}")
-                
-    except Exception as error:
-        logger.error(f"detail: def beautiful_soup -> {error}")
+    return claims
 
 
-def main(client: requests.Session) -> None:
+def main() -> None:
     """
     # ☠️ Change the indicated values no `README.md`
+    ------
+    ### ☠️ `main_get_urls()` It's a worrying feature.
+
     """
 
-    for i in range(init_page, total_page, 1):
-        try:
-            response = request(client, url=f"{url}/?pagina={i}{_filter}")
-            if not response:
-                logger.error(f"Erro 500 -> Request id: {i}")
-                continue
-            if response.status_code == 200:
-                beautiful_soup(client, response)
+    url_base: str = "https://www.reclameaqui.com.br"
+    file_json: str = "claims_list"
+    file_ulrs_claims = "links_claims"
+    company: str = "itau"
+    filter: str = "&status=EVALUATED"
+    url: str = f"/empresa/{company}/lista-reclamacoes"
+    urls_file_json = True
+    init_page = 1
 
-            else:
-                logger.error(
-                    f"Status: {response.status_code} -> Request id: {i}"
-                )
-        except Exception as error:
-            logger.error(f"Request: {error}")
+    file_json: str = check_and_update_json(file_json)
 
+    url_claims: str = f"{url_base}{url}/?pagina=1{filter}"
+
+    total_pages = get_total_page(url_claims)
+    logger.info(f"Total de paginas: {total_pages}")
+
+    if not urls_file_json:
+        file_ulrs_claims: str = check_and_update_json(file_ulrs_claims)
+        urls = main_get_urls(
+            url=url_claims,
+            file_ulrs_claims=file_ulrs_claims,
+            total_pages=total_pages,
+            init_page=init_page,
+        )
+    else:
+        with open("urls.json", "r", encoding="utf-8") as file:
+            urls: list[str] = json.load(file)
+
+    claims = []
+    try:
+        for url in urls:
+            logger.info(url)
+            response = request(url)
+            claim_dict = get_dados(response, url)
+            claims.append(claim_dict)
+            
+    except Exception as error:
+        logger.fatal(error)
+
+    claims: list[dict] = clean_claims(claims)
+    with open(file_json, "w", encoding="utf-8") as file:
+        json.dump(claims, file, ensure_ascii=False, indent=4)
+
+    with open(file_json, "w", encoding="utf-8") as file:
+        json.dump(claims, file, ensure_ascii=False, indent=4)
+
+    json_to_excel(file_json)
 
 if __name__ == "__main__":
-    logger = logging.getLogger("requests")
-    logging.basicConfig(level=logging.DEBUG)
-
-    global file_json
-    global url_base
-    global ROOT_DIR
-    global file_xlsx
-    global _filter
-    global url
-    global company
-    global init_page
-
-    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-    url_base = "https://www.reclameaqui.com.br"
-    file_json = "claims_list"
-    company = "itau"
-    _filter = "&status=EVALUATED"
-    url = f"/empresa/{company}/lista-reclamacoes"
-
-    file_xlsx = "claims_list"
-    init_page = 1
-    file_json = check_and_update_json(file_json)
-
-    with requests.Session() as client:
-        total_page = get_total_page(client, f"{url}/?{_filter}")
-        logger.info(f"Total de paginas: {total_page}")
-        main(client)
+    main()
