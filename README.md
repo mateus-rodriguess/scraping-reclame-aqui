@@ -18,7 +18,7 @@ Reclame Aqui is a platform widely used by Brazilian consumers to register their 
 
 ## Install
 
-- ☠️ Requires `Python` 3.12 or later to run.
+- ☠️ Requires `python` 3.12 or later to run.
 
 ```bash
 pip install -r requirements.txt
@@ -28,7 +28,7 @@ pip install -r requirements.txt
 ## 🚀 Run
 
 ```bash
-ptyhon main.py
+python main.py
 ```
 <hr>
 
