@@ -16,6 +16,9 @@ def json_to_excel(claims: list[dict], file_name: str = "claims_list") -> None:
         "status": "Status",
         "description": "Descrição",
         "chat": "Mensagens",
+        "tags": "Categorias",
+        "location": "Localização",
+        "id": "Id",
         "date": "Data",
         "final_consideration.message": "Mensagem de consideração final",
         "final_consideration.service_note": "Nota do serviço",
@@ -24,7 +27,7 @@ def json_to_excel(claims: list[dict], file_name: str = "claims_list") -> None:
         "link": "Link",
     }
 
-    df = pd.json_normalize(claims).rename(columns=colunas, index=False)
-    df.to_excel(file_xlsx, index=False)
+    df = pd.json_normalize(claims).rename(columns=colunas)
+    df.to_excel(file_xlsx)
 
     logging.info(f"Save: {file_xlsx}")

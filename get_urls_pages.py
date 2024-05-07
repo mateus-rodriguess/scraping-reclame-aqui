@@ -23,12 +23,12 @@ def scroll_page() -> None:
 
 def check_block_page(n: int = 0) -> None:
     n += 1
-    logger.info("Checando se a pagina esta bloqueada")
+    logger.info("Checando se a pagina esta bloqueada.")
 
     block_page = driver.find_element(By.ID, "sec-overlay")
     if block_page.get_attribute("style") == "display: block;":
         logger.info(block_page.get_attribute("style"))
-        logger.info(f"Pagina bloqueda, espere alguns segundos, tentativa {n}")
+        logger.info(f"Pagina bloqueda, espere alguns segundos, tentativa {n}.")
         sleep(10)
         check_block_page(n)
 
@@ -92,7 +92,7 @@ def get_urls_page(n: int = 0) -> list[str]:
 
         return get_urls()
     except Exception as error:
-        logger.error(f"erro: {error}\n-> tentativa: {n}")
+        logger.error(f"erro: {error}\n-> tentativa: {n}.")
         get_urls_page(n)
 
 
@@ -110,16 +110,29 @@ def check_urls_claims_in_page():
     return True
 
 
+def together_urls(urls_file_old: str, urls: list[str]) -> list[str]:
+    try:
+
+        with open(urls_file_old, "r", encoding="utf-8") as file:
+            urls_file: list[str] = json.load(file)
+        return sorted(list(set(urls_file + urls)))
+    except Exception as error:
+        logger.error(error)
+
+    return urls
+
+
 def main_get_urls(
     url: str,
     file_ulrs_claims: str,
+    urls_file_old: str = None,
     total_pages: int = 1,
     init_page: int = 1,
-    error_trial_limit: int = 20
+    error_trial_limit: int = 10,
 ):
     """
     # ☠️ most functions in this context are recursive.
-    # ☠️  careful when calling them, pay attention to the logs
+    ### ☠️ careful when calling them, pay attention to the logs.
     ##
     ----
     ```python
@@ -142,29 +155,35 @@ def main_get_urls(
 
     logger.info("INICIANDO ELEMENTOS DA PAGINA....")
     sleep(random.uniform(3, 9))
-    
+
     for i in range(init_page, total_pages):
         if not check_urls_claims_in_page():
             number_pages_error += 1
             if number_pages_error >= error_trial_limit:
-                logger.error(f"limit of pages with error reached, last page: {i}")
+                logger.error(
+                    f"limit of pages with error reached, last page: {i}."
+                )
                 break
-            logger.error(f"A pagina não contem links de reclamações, proxima pagina {i} de {total_pages}")
+            logger.error(
+                f"A pagina não contem links de reclamações, proxima pagina {
+                    i} de {total_pages}."
+            )
             continue
-        
+
         number_pages_error = 0
-        
+
         with open(file_ulrs_claims, "r", encoding="utf-8") as file:
-            ulrs_file: list[str] = json.load(file)
+            ulrs_list: list[str] = json.load(file)
 
         urls: list[str] = get_urls_page()
-        ulrs_file.extend(urls)
+        if urls:
+            ulrs_list.extend(urls)
 
         with open(file_ulrs_claims, "w", encoding="utf-8") as file:
-            logger.info(f"Salvando urls, total: {len(ulrs_file)}")
-            json.dump(ulrs_file, file, ensure_ascii=False, indent=4)
+            logger.info(f"Salvando urls, total: {len(ulrs_list)}.")
+            json.dump(ulrs_list, file, ensure_ascii=False, indent=4)
 
-        logger.info(f"Proxima pagina: {i} de {total_pages}")
+        logger.info(f"Proxima pagina: {i} de {total_pages}.")
 
         sleep(random.uniform(0.2, 0.6))
 
@@ -175,5 +194,7 @@ def main_get_urls(
         button.click()
 
     driver.close()
+    if urls_file_old:
+        ulrs_list = together_urls(urls_file_old, ulrs_list)
 
-    return ulrs_file
+    return ulrs_list
