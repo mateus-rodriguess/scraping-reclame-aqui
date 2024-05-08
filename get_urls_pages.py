@@ -142,9 +142,9 @@ def main_get_urls(
     """
 
     global driver
-    number_pages_error: int = 0
     sys.setrecursionlimit(100)
-
+    number_pages_error: int = 0
+    
     user_agent = "--user-agent=Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0"
     firefox_options = Options()
     firefox_options.add_argument(user_agent)

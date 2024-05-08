@@ -47,7 +47,7 @@ def main() -> None:
         urls = main_get_urls(
             url=url_claims,
             file_ulrs_claims=file_ulrs_claims,
-            urls_file_old=None,
+            urls_file_old=urls_file_old,
             total_pages=total_pages,
             init_page=init_page,
             error_trial_limit=error_trial_limit,
@@ -75,12 +75,6 @@ def main() -> None:
 
     with open(file_json, "w", encoding="utf-8") as file:
         json.dump(claims, file, ensure_ascii=False, indent=4)
-
-    with open(file_json, "w", encoding="utf-8") as file:
-        json.dump(claims, file, ensure_ascii=False, indent=4)
-
-    with open(file_json, "r", encoding="utf-8") as file:
-        claims: list[str] = json.load(file)
 
     json_to_excel(claims, file_xlsx)
 

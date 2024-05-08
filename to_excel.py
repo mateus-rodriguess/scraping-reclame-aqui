@@ -1,11 +1,15 @@
+import json
 import logging
 import os
+import sys
 from datetime import datetime
 
 import pandas as pd
 
 
 def json_to_excel(claims: list[dict], file_name: str = "claims_list") -> None:
+    
+    sys.setrecursionlimit(10000000)
     ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
     current_date = datetime.now().date()
 
@@ -28,6 +32,6 @@ def json_to_excel(claims: list[dict], file_name: str = "claims_list") -> None:
     }
 
     df = pd.json_normalize(claims).rename(columns=colunas)
-    df.to_excel(file_xlsx)
+    df.to_excel(file_xlsx, index=False)
 
     logging.info(f"Save: {file_xlsx}")
